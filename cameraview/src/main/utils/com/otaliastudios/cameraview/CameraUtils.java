@@ -7,7 +7,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
 import android.hardware.Camera;
 import android.os.Handler;
-import android.support.annotation.UiThread;
+import android.support.annotation.Nullable;
 import android.support.annotation.WorkerThread;
 import android.support.media.ExifInterface;
 
@@ -98,11 +98,16 @@ public class CameraUtils {
      */
     @SuppressWarnings("WeakerAccess")
     public static void decodeBitmap(final byte[] source, final int maxWidth, final int maxHeight, final BitmapCallback callback) {
+        decodeBitmap(source, maxWidth, maxHeight, -1, callback);
+    }
+
+    @SuppressWarnings("WeakerAccess")
+    static void decodeBitmap(final byte[] source, final int maxWidth, final int maxHeight, final int rotation, final BitmapCallback callback) {
         final Handler ui = new Handler();
         WorkerHandler.run(new Runnable() {
             @Override
             public void run() {
-                final Bitmap bitmap = decodeBitmap(source, maxWidth, maxHeight);
+                final Bitmap bitmap = decodeBitmap(source, maxWidth, maxHeight, rotation);
                 ui.post(new Runnable() {
                     @Override
                     public void run() {
@@ -112,7 +117,6 @@ public class CameraUtils {
             }
         });
     }
-
 
     /**
      * Decodes an input byte array and outputs a Bitmap that is ready to be displayed.
@@ -125,68 +129,85 @@ public class CameraUtils {
      * @param maxWidth the max allowed width
      * @param maxHeight the max allowed height
      */
-    // TODO ignores flipping
     @SuppressWarnings({"SuspiciousNameCombination", "WeakerAccess"})
+    @Nullable
     @WorkerThread
     public static Bitmap decodeBitmap(byte[] source, int maxWidth, int maxHeight) {
+        return decodeBitmap(source, maxWidth, maxHeight, -1);
+    }
+
+    // Null: got OOM
+    // TODO ignores flipping. but it should be super rare.
+    @Nullable
+    static Bitmap decodeBitmap(byte[] source, int maxWidth, int maxHeight, int rotation) {
         if (maxWidth <= 0) maxWidth = Integer.MAX_VALUE;
         if (maxHeight <= 0) maxHeight = Integer.MAX_VALUE;
         int orientation;
         boolean flip;
-        InputStream stream = null;
-        try {
-            // http://sylvana.net/jpegcrop/exif_orientation.html
-            stream = new ByteArrayInputStream(source);
-            ExifInterface exif = new ExifInterface(stream);
-            int exifOrientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
-            orientation = decodeExifOrientation(exifOrientation);
-            flip = exifOrientation == ExifInterface.ORIENTATION_FLIP_HORIZONTAL ||
-                    exifOrientation == ExifInterface.ORIENTATION_FLIP_VERTICAL ||
-                    exifOrientation == ExifInterface.ORIENTATION_TRANSPOSE ||
-                    exifOrientation == ExifInterface.ORIENTATION_TRANSVERSE;
+        if (rotation == -1) {
+            InputStream stream = null;
+            try {
+                // http://sylvana.net/jpegcrop/exif_orientation.html
+                stream = new ByteArrayInputStream(source);
+                ExifInterface exif = new ExifInterface(stream);
+                int exifOrientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+                orientation = readExifOrientation(exifOrientation);
+                flip = exifOrientation == ExifInterface.ORIENTATION_FLIP_HORIZONTAL ||
+                        exifOrientation == ExifInterface.ORIENTATION_FLIP_VERTICAL ||
+                        exifOrientation == ExifInterface.ORIENTATION_TRANSPOSE ||
+                        exifOrientation == ExifInterface.ORIENTATION_TRANSVERSE;
 
-        } catch (IOException e) {
-            e.printStackTrace();
-            orientation = 0;
-            flip = false;
-        } finally {
-            if (stream != null) {
-                try { stream.close(); } catch (Exception ignored) {}
+            } catch (IOException e) {
+                e.printStackTrace();
+                orientation = 0;
+                flip = false;
+            } finally {
+                if (stream != null) {
+                    try {
+                        stream.close();
+                    } catch (Exception ignored) { }
+                }
             }
+        } else {
+            orientation = rotation;
+            flip = false;
         }
 
         Bitmap bitmap;
-        if (maxWidth < Integer.MAX_VALUE || maxHeight < Integer.MAX_VALUE) {
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inJustDecodeBounds = true;
-            BitmapFactory.decodeByteArray(source, 0, source.length, options);
+        try {
+            if (maxWidth < Integer.MAX_VALUE || maxHeight < Integer.MAX_VALUE) {
+                BitmapFactory.Options options = new BitmapFactory.Options();
+                options.inJustDecodeBounds = true;
+                BitmapFactory.decodeByteArray(source, 0, source.length, options);
 
-            int outHeight = options.outHeight;
-            int outWidth = options.outWidth;
-            if (orientation % 180 != 0) {
-                outHeight = options.outWidth;
-                outWidth = options.outHeight;
+                int outHeight = options.outHeight;
+                int outWidth = options.outWidth;
+                if (orientation % 180 != 0) {
+                    outHeight = options.outWidth;
+                    outWidth = options.outHeight;
+                }
+
+                options.inSampleSize = computeSampleSize(outWidth, outHeight, maxWidth, maxHeight);
+                options.inJustDecodeBounds = false;
+                bitmap = BitmapFactory.decodeByteArray(source, 0, source.length, options);
+            } else {
+                bitmap = BitmapFactory.decodeByteArray(source, 0, source.length);
             }
 
-            options.inSampleSize = computeSampleSize(outWidth, outHeight, maxWidth, maxHeight);
-            options.inJustDecodeBounds = false;
-            bitmap = BitmapFactory.decodeByteArray(source, 0, source.length, options);
-        } else {
-            bitmap = BitmapFactory.decodeByteArray(source, 0, source.length);
-        }
-
-        if (orientation != 0 || flip) {
-            Matrix matrix = new Matrix();
-            matrix.setRotate(orientation);
-            // matrix.postScale(1, -1) Flip... needs testing.
-            Bitmap temp = bitmap;
-            bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-            temp.recycle();
+            if (orientation != 0 || flip) {
+                Matrix matrix = new Matrix();
+                matrix.setRotate(orientation);
+                Bitmap temp = bitmap;
+                bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+                temp.recycle();
+            }
+        } catch (OutOfMemoryError e) {
+            bitmap = null;
         }
         return bitmap;
     }
 
-    static int decodeExifOrientation(int exifOrientation) {
+    static int readExifOrientation(int exifOrientation) {
         int orientation;
         switch (exifOrientation) {
             case ExifInterface.ORIENTATION_NORMAL:
