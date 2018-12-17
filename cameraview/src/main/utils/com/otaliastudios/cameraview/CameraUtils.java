@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
 import android.hardware.Camera;
 import android.os.Handler;
+import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.annotation.WorkerThread;
 import android.support.media.ExifInterface;
@@ -29,7 +30,7 @@ public class CameraUtils {
      * @return whether device has cameras
      */
     @SuppressWarnings("WeakerAccess")
-    public static boolean hasCameras(Context context) {
+    public static boolean hasCameras(@NonNull Context context) {
         PackageManager manager = context.getPackageManager();
         // There's also FEATURE_CAMERA_EXTERNAL , should we support it?
         return manager.hasSystemFeature(PackageManager.FEATURE_CAMERA)
@@ -45,7 +46,7 @@ public class CameraUtils {
      * @param facing either {@link Facing#BACK} or {@link Facing#FRONT}
      * @return true if such sensor exists
      */
-    public static boolean hasCameraFacing(Context context, Facing facing) {
+    public static boolean hasCameraFacing(@NonNull Context context, @NonNull Facing facing) {
         int internal = new Mapper1().map(facing);
         Camera.CameraInfo cameraInfo = new Camera.CameraInfo();
         for (int i = 0, count = Camera.getNumberOfCameras(); i < count; i++) {
@@ -65,7 +66,7 @@ public class CameraUtils {
      */
     @SuppressWarnings("WeakerAccess")
     @WorkerThread
-    public static void decodeBitmap(final byte[] source) {
+    public static void decodeBitmap(@NonNull final byte[] source) {
         decodeBitmap(source, Integer.MAX_VALUE, Integer.MAX_VALUE);
     }
 
@@ -79,7 +80,7 @@ public class CameraUtils {
      * @param callback a callback to be notified
      */
     @SuppressWarnings("WeakerAccess")
-    public static void decodeBitmap(final byte[] source, final BitmapCallback callback) {
+    public static void decodeBitmap(@NonNull final byte[] source, @NonNull final BitmapCallback callback) {
         decodeBitmap(source, Integer.MAX_VALUE, Integer.MAX_VALUE, callback);
     }
 
@@ -97,12 +98,12 @@ public class CameraUtils {
      * @param callback a callback to be notified
      */
     @SuppressWarnings("WeakerAccess")
-    public static void decodeBitmap(final byte[] source, final int maxWidth, final int maxHeight, final BitmapCallback callback) {
+    public static void decodeBitmap(@NonNull final byte[] source, final int maxWidth, final int maxHeight, @NonNull final BitmapCallback callback) {
         decodeBitmap(source, maxWidth, maxHeight, -1, callback);
     }
 
     @SuppressWarnings("WeakerAccess")
-    static void decodeBitmap(final byte[] source, final int maxWidth, final int maxHeight, final int rotation, final BitmapCallback callback) {
+    static void decodeBitmap(@NonNull final byte[] source, final int maxWidth, final int maxHeight, final int rotation, @NonNull final BitmapCallback callback) {
         final Handler ui = new Handler();
         WorkerHandler.run(new Runnable() {
             @Override
@@ -132,14 +133,14 @@ public class CameraUtils {
     @SuppressWarnings({"SuspiciousNameCombination", "WeakerAccess"})
     @Nullable
     @WorkerThread
-    public static Bitmap decodeBitmap(byte[] source, int maxWidth, int maxHeight) {
+    public static Bitmap decodeBitmap(@NonNull byte[] source, int maxWidth, int maxHeight) {
         return decodeBitmap(source, maxWidth, maxHeight, -1);
     }
 
     // Null: got OOM
     // TODO ignores flipping. but it should be super rare.
     @Nullable
-    static Bitmap decodeBitmap(byte[] source, int maxWidth, int maxHeight, int rotation) {
+    private static Bitmap decodeBitmap(@NonNull byte[] source, int maxWidth, int maxHeight, int rotation) {
         if (maxWidth <= 0) maxWidth = Integer.MAX_VALUE;
         if (maxHeight <= 0) maxHeight = Integer.MAX_VALUE;
         int orientation;
@@ -183,7 +184,9 @@ public class CameraUtils {
                 int outHeight = options.outHeight;
                 int outWidth = options.outWidth;
                 if (orientation % 180 != 0) {
+                    //noinspection SuspiciousNameCombination
                     outHeight = options.outWidth;
+                    //noinspection SuspiciousNameCombination
                     outWidth = options.outHeight;
                 }
 
