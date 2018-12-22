@@ -643,6 +643,12 @@ class Camera1 extends CameraController implements Camera.PreviewCallback, Camera
                     try {
                         mMediaRecorder.prepare();
                         mMediaRecorder.start();
+                    } catch(IllegalStateException e) {
+                        LOG.e("startVideo", "Failed to connect. Maybe in use by another app?", e);
+                        mVideoFile = null;
+                        mCamera.lock();
+                        endVideoImmediately();
+                        throw new CameraException(e, CameraException.REASON_FAILED_TO_CONNECT);
                     } catch (Exception e) {
                         LOG.e("Error while starting MediaRecorder. Swallowing.", e);
                         mVideoFile = null;
